@@ -5,13 +5,50 @@ import os.path
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
+import re
 
 # If modifying these scopes, delete the file token.pickle.
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
 # The ID and range of a sample spreadsheet.
-SAMPLE_SPREADSHEET_ID = '1u1OSB_9z6SXhF8jR6DxWhxQQIkKPYERjmLDzDyeUx98'
-SAMPLE_RANGE_NAME = 'Class Budget!A2:E'
+SPREADSHEET_ID = '1Kc5kwDV1PXI8wXA3qcvlyM5Aip5auOQP_cMicYMQBi4'
+COURSES_RANGE = 'Run01-Input!B2:AP3'
+MOOD_EFFECT_RANGE = 'Mood effects!A2:I16'
+
+
+def get_course_plan(sheet):
+    result = sheet.values().get(spreadsheetId=SPREADSHEET_ID,
+                                range=COURSES_RANGE).execute()
+    values = result.get('values', [])
+    assert len(values) == 2
+    course_plan = []
+    morning, afternoon = values[0], values[1]
+    for i in range(len(morning)):
+        course_plan.append((morning[i], afternoon[i]))
+    return course_plan
+
+def get_mood_effects(sheet):
+    result = sheet.values().get(spreadsheetId=SPREADSHEET_ID,
+                                range=MOOD_EFFECT_RANGE).execute()
+    values = result.get('values', [])
+
+    mood_effects = {}
+    moods = values[0][1:]
+    for mood in moods:
+        mood_effects[mood] = {}
+    for row in values[1:]:
+        skill = row[0]
+        for i, cell in enumerate(row[1:]):
+            mood = moods[i]
+            mood_effects[mood][skill] = int(cell)
+    return mood_effects
+
+def write_courses(sheet, morning, afternoon):
+    body = {"values": [morning, afternoon]}
+    sheet.values().update(spreadsheetId=SPREADSHEET_ID,
+                          range=COURSES_RANGE,
+                          body=body, valueInputOption="RAW").execute()
+
 
 def main():
     """Shows basic usage of the Sheets API.
@@ -40,17 +77,27 @@ def main():
 
     # Call the Sheets API
     sheet = service.spreadsheets()
-    result = sheet.values().get(spreadsheetId=SAMPLE_SPREADSHEET_ID,
-                                range=SAMPLE_RANGE_NAME).execute()
-    values = result.get('values', [])
+    # course_plan = get_course_plan(sheet)
+    # mood_effects = get_mood_effects(sheet)
+    # print(course_plan)
+    run01 = open("run01.html", "r", encoding = "ISO-8859-1").read()
+    weeks = run01.split("<hr>")[1:]
+    # print(weeks[4])
+    study_pattern = (r"Studied (?P<morning>.*) in the morning\.\)<br>.*"
+                     r"\(Studied (?P<afternoon>.*) in the afternoon")
+    morning, afternoon = [], []
+    for week in weeks[1:]:
+        matches = re.search(study_pattern, week)
+        if matches:
+            morning.append(matches.group("morning"))
+            afternoon.append(matches.group("afternoon"))
+        # else:
+        #     print(week)
+    # print(len(morning))
+    # print(len(weeks))
+    write_courses(sheet, morning, afternoon)
+    # print(morning)
 
-    if not values:
-        print('No data found.')
-    else:
-        print('Name, Major:')
-        for row in values:
-            # Print columns A and E, which correspond to indices 0 and 4.
-            print('%s, %s' % (row[0], row[4]))
 
 if __name__ == '__main__':
     main()
